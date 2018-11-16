@@ -2,6 +2,9 @@
    here so that Mitsuba can optionally be compiled without OpenEXR support. */
 
 #if defined(MTS_HAS_OPENEXR)
+#if __cplusplus > 199711L
+#define register      // Deprecated in C++11.
+#endif  // #if __cplusplus > 199711L
 #include <half.h>
 #else
 ///////////////////////////////////////////////////////////////////////////

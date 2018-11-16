@@ -36,6 +36,6 @@ add_bsdf(null       null.cpp)
 add_bsdf(thindielectric thindielectric.cpp)
 
 
-if (BOOST_SPIRIT_WORKS)
-  add_bsdf(irawan   irawan.h irawan.cpp)
-endif ()
+# if (BOOST_SPIRIT_WORKS)
+#   add_bsdf(irawan   irawan.h irawan.cpp)
+# endif ()
