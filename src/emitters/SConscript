@@ -11,4 +11,6 @@ plugins += env.SharedLibrary('sun', ['sun.cpp'])
 plugins += env.SharedLibrary('sunsky', ['sunsky.cpp'])
 plugins += env.SharedLibrary('spot', ['spot.cpp'])
 
+plugins += env.SharedLibrary('area_bitmap', ['area_bitmap.cpp'])
+
 Export('plugins')

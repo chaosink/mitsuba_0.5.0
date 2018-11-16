@@ -547,8 +547,8 @@ void MainWindow::on_actionFocusSelected_triggered() {
 }
 
 void MainWindow::onSwitchTab(int rel) {
-	int index = ui->tabBar->currentIndex() + rel;
-	if (index >= 0 && index < ui->tabBar->count())
+	int index = (ui->tabBar->currentIndex() + rel + ui->tabBar->count()) % ui->tabBar->count();
+//	if (index >= 0 && index < ui->tabBar->count())
 		ui->tabBar->setCurrentIndex(index);
 }
 
