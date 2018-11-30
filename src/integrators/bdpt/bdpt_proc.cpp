@@ -156,6 +156,21 @@ public:
 				sensorSubpath.vertex(i-1)->rrWeight *
 				sensorSubpath.edge(i-1)->weight[ERadiance];
 
+		std::vector<int> depthSampleCount(
+			emitterSubpath.vertexCount() +
+			sensorSubpath.vertexCount() + 1);
+		std::vector<Spectrum> depthValues(
+			emitterSubpath.vertexCount() +
+			sensorSubpath.vertexCount() + 1, Spectrum(0.f));
+		struct LightImageSample {
+			int depth;
+			Point2 pos;
+			Spectrum value;
+			LightImageSample(int depth, const Point2 &pos, const Spectrum &value)
+				: depth(depth), pos(pos), value(value) {}
+		};
+		std::vector<LightImageSample> lightImageSamples;
+
 		Spectrum sampleValue(0.0f);
 		for (int s = (int) emitterSubpath.vertexCount()-1; s >= 0; --s) {
 			/* Determine the range of sensor vertices to be traversed,
@@ -279,8 +294,8 @@ public:
 				}
 
 				/* Compute the multiple importance sampling weight */
-				Float miWeight = Path::miWeight(scene, emitterSubpath, &connectionEdge,
-					sensorSubpath, s, t, m_config.sampleDirect, m_config.lightImage);
+				// Float miWeight = Path::miWeight(scene, emitterSubpath, &connectionEdge,
+				// 	sensorSubpath, s, t, m_config.sampleDirect, m_config.lightImage);
 
 				if (sampleDirect) {
 					/* Now undo the previous change */
@@ -305,12 +320,26 @@ public:
 				#endif
 
 				if (t >= 2)
-					sampleValue += value * miWeight;
+					// sampleValue += value * miWeight;
+					depthValues[s + t] += value;
 				else
-					wr->putLightSample(samplePos, value * miWeight);
+					// wr->putLightSample(samplePos, value * miWeight);
+					lightImageSamples.emplace_back(s + t, samplePos, value);
+				depthSampleCount[s + t]++;
 			}
 		}
+		// wr->putSample(initialSamplePos, sampleValue);
+
+		/// Though similar results but wrong implementation.
+		/// Should record samples in different (s,t) buffers, average all buffers whose s-t-sum is
+		/// equal, and sum all the averaged buffers.
+		for(int i = 0; i < depthSampleCount.size(); i++)
+			if(depthSampleCount[i])
+				sampleValue += depthValues[i] / depthSampleCount[i];
 		wr->putSample(initialSamplePos, sampleValue);
+
+		for(const auto &s: lightImageSamples)
+			wr->putLightSample(s.pos, s.value / depthSampleCount[s.depth]);
 	}
 
 	ref<WorkProcessor> clone() const {
