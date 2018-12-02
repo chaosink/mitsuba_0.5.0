@@ -110,11 +110,17 @@ static StatsCounter avgPathLength("Path tracer", "Average path length", EAverage
 class MIPathTracer : public MonteCarloIntegrator {
 public:
 	MIPathTracer(const Properties &props)
-		: MonteCarloIntegrator(props) { }
+		: MonteCarloIntegrator(props) {
+		m_sampleBSDF = props.getBoolean("sampleBSDF", true);
+		m_sampleEmitter = props.getBoolean("sampleEmitter", true);
+	}
 
 	/// Unserialize from a binary data stream
 	MIPathTracer(Stream *stream, InstanceManager *manager)
-		: MonteCarloIntegrator(stream, manager) { }
+		: MonteCarloIntegrator(stream, manager) {
+		m_sampleBSDF = stream->readBool();
+		m_sampleEmitter = stream->readBool();
+	}
 
 	Spectrum Li(const RayDifferential &r, RadianceQueryRecord &rRec) const {
 		/* Some aliases and local variables */
@@ -171,7 +177,7 @@ public:
 			/* Estimate the direct illumination if this is requested */
 			DirectSamplingRecord dRec(its);
 
-			if (rRec.type & RadianceQueryRecord::EDirectSurfaceRadiance &&
+			if (m_sampleEmitter && rRec.type & RadianceQueryRecord::EDirectSurfaceRadiance &&
 				(bsdf->getType() & BSDF::ESmooth)) {
 				Spectrum value = scene->sampleEmitterDirect(dRec, rRec.nextSample2D());
 				if (!value.isZero()) {
@@ -193,8 +199,12 @@ public:
 							? bsdf->pdf(bRec) : 0;
 
 						/* Weight using the power heuristic */
-						Float weight = miWeight(dRec.pdf, bsdfPdf);
-						Li += throughput * value * bsdfVal * weight;
+						if (m_sampleBSDF) {
+							Float weight = miWeight(dRec.pdf, bsdfPdf);
+							Li += throughput * value * bsdfVal * weight;
+						} else {
+							Li += throughput * value * bsdfVal;
+						}
 					}
 				}
 			}
@@ -258,9 +268,14 @@ public:
 				(rRec.type & RadianceQueryRecord::EDirectSurfaceRadiance)) {
 				/* Compute the prob. of generating that direction using the
 				   implemented direct illumination sampling technique */
-				const Float lumPdf = (!(bRec.sampledType & BSDF::EDelta)) ?
-					scene->pdfEmitterDirect(dRec) : 0;
-				Li += throughput * value * miWeight(bsdfPdf, lumPdf);
+
+				if (m_sampleBSDF && m_sampleEmitter) {
+					const Float lumPdf = (!(bRec.sampledType & BSDF::EDelta)) ?
+						scene->pdfEmitterDirect(dRec) : 0;
+					Li += throughput * value * miWeight(bsdfPdf, lumPdf);
+				} else if (m_sampleBSDF) {
+					Li += throughput * value;
+				}
 			}
 
 			/* ==================================================================== */
@@ -301,6 +316,8 @@ public:
 
 	void serialize(Stream *stream, InstanceManager *manager) const {
 		MonteCarloIntegrator::serialize(stream, manager);
+		stream->writeBool(m_sampleBSDF);
+		stream->writeBool(m_sampleEmitter);
 	}
 
 	std::string toString() const {
@@ -309,11 +326,16 @@ public:
 			<< "  maxDepth = " << m_maxDepth << "," << endl
 			<< "  rrDepth = " << m_rrDepth << "," << endl
 			<< "  strictNormals = " << m_strictNormals << endl
+			<< "  sampleBSDF = " << m_sampleBSDF << endl
+			<< "  sampleEmitter = " << m_sampleEmitter << endl
 			<< "]";
 		return oss.str();
 	}
 
 	MTS_DECLARE_CLASS()
+private:
+	bool m_sampleBSDF;
+	bool m_sampleEmitter;
 };
 
 MTS_IMPLEMENT_CLASS_S(MIPathTracer, false, MonteCarloIntegrator)
