@@ -260,35 +260,35 @@ public:
 						scene, vsEdge, vs, vt, vtEdge, interactions))
 					continue;
 
-				/* Account for the terms of the measurement contribution
-				   function that are coupled to the connection edge */
-				if (!sampleDirect)
-					value *= connectionEdge.evalCached(vs, vt, PathEdge::EGeneralizedGeometricTerm);
-				else
-					value *= connectionEdge.evalCached(vs, vt, PathEdge::ETransmittance |
-							(s == 1 ? PathEdge::ECosineRad : PathEdge::ECosineImp));
-
-				if (sampleDirect) {
-					/* A direct sampling strategy was used, which generated
-					   two new vertices at one of the path ends. Temporarily
-					   modify the path to reflect this change */
-					if (t == 1)
-						sensorSubpath.swapEndpoints(vtPred, vtEdge, vt);
-					else
-						emitterSubpath.swapEndpoints(vsPred, vsEdge, vs);
-				}
-
-				/* Compute the multiple importance sampling weight */
-				Float miWeight = Path::miWeight(scene, emitterSubpath, &connectionEdge,
-					sensorSubpath, s, t, m_config.sampleDirect, m_config.lightImage);
-
-				if (sampleDirect) {
-					/* Now undo the previous change */
-					if (t == 1)
-						sensorSubpath.swapEndpoints(vtPred, vtEdge, vt);
-					else
-						emitterSubpath.swapEndpoints(vsPred, vsEdge, vs);
-				}
+				// /* Account for the terms of the measurement contribution
+				//    function that are coupled to the connection edge */
+				// if (!sampleDirect)
+				// 	value *= connectionEdge.evalCached(vs, vt, PathEdge::EGeneralizedGeometricTerm);
+				// else
+				// 	value *= connectionEdge.evalCached(vs, vt, PathEdge::ETransmittance |
+				// 			(s == 1 ? PathEdge::ECosineRad : PathEdge::ECosineImp));
+				//
+				// if (sampleDirect) {
+				// 	/* A direct sampling strategy was used, which generated
+				// 	   two new vertices at one of the path ends. Temporarily
+				// 	   modify the path to reflect this change */
+				// 	if (t == 1)
+				// 		sensorSubpath.swapEndpoints(vtPred, vtEdge, vt);
+				// 	else
+				// 		emitterSubpath.swapEndpoints(vsPred, vsEdge, vs);
+				// }
+				//
+				// /* Compute the multiple importance sampling weight */
+				// Float miWeight = Path::miWeight(scene, emitterSubpath, &connectionEdge,
+				// 	sensorSubpath, s, t, m_config.sampleDirect, m_config.lightImage);
+				//
+				// if (sampleDirect) {
+				// 	/* Now undo the previous change */
+				// 	if (t == 1)
+				// 		sensorSubpath.swapEndpoints(vtPred, vtEdge, vt);
+				// 	else
+				// 		emitterSubpath.swapEndpoints(vsPred, vsEdge, vs);
+				// }
 
 				/* Determine the pixel sample position when necessary */
 				if (vt->isSensorSample() && !vt->getSamplePosition(vs, samplePos))
@@ -305,9 +305,9 @@ public:
 				#endif
 
 				if (t >= 2)
-					sampleValue += value * miWeight;
+					sampleValue += Spectrum(1.f);//value * miWeight;
 				else
-					wr->putLightSample(samplePos, value * miWeight);
+					wr->putLightSample(samplePos, Spectrum(1.f));//value * miWeight);
 			}
 		}
 		wr->putSample(initialSamplePos, sampleValue);
