@@ -3017,8 +3017,8 @@ void Bitmap::readOpenEXR(Stream *stream, const std::string &_prefix) {
 		Vector2i sampling(channel.xSampling, channel.ySampling);
 		m_channelNames.push_back(channelName);
 
-		if (channel.type != pxType)
-			Log(EError, "readOpenEXR(): file has multiple channel formats, this is unsupported!");
+		// if (channel.type != pxType)
+		// 	Log(EError, "readOpenEXR(): file has multiple channel formats, this is unsupported!");
 
 		if (sampling == Vector2i(1)) {
 			/* This is a full resolution channel. Load the ordinary way */
