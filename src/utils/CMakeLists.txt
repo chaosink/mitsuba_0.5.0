@@ -15,3 +15,5 @@ add_utility(cylclip        cylclip.cpp MTS_HW)
 add_utility(kdbench        kdbench.cpp)
 add_utility(tonemap        tonemap.cpp)
 #add_utility(rdielprec      rdielprec.cpp)
+
+add_utility(convert        convert.cpp)

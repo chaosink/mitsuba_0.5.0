@@ -7,4 +7,6 @@ plugins += env.SharedLibrary('kdbench', ['kdbench.cpp'])
 plugins += env.SharedLibrary('tonemap', ['tonemap.cpp'])
 #plugins += env.SharedLibrary('rdielprec', ['rdielprec.cpp'])
 
+plugins += env.SharedLibrary('convert', ['convert.cpp'])
+
 Export('plugins')
