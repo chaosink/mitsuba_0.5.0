@@ -19,8 +19,89 @@
 #include <mitsuba/render/scene.h>
 #include <mitsuba/core/statistics.h>
 #include <mitsuba/render/renderproc.h>
+#include <mitsuba/core/plugin.h>
 
 MTS_NAMESPACE_BEGIN
+
+template<typename T>
+inline std::unique_ptr<T[]> zeroAlloc(size_t size)
+{
+	std::unique_ptr<T[]> result(new T[size]);
+	std::memset(result.get(), 0, size*sizeof(T));
+	return std::move(result);
+}
+
+class OutputBuffer
+{
+	Vector2i _res;
+
+	std::unique_ptr<Vector[]> _buffer;
+	std::unique_ptr<float[]> _variance;
+	std::unique_ptr<uint[]> _sampleCount;
+
+public:
+	OutputBuffer(Vector2i res)
+		: _res(res)
+	{
+		size_t numPixels = res.x * res.y;
+
+		_buffer = zeroAlloc<Vector>(numPixels);
+		_variance = zeroAlloc<float>(numPixels);
+		_sampleCount = zeroAlloc<uint>(numPixels);
+	}
+
+	void addSample(Point2i pixel, Vector c)
+	{
+		if (std::isnan(c.x) || std::isnan(c.y) || std::isnan(c.z))
+			return;
+
+		int idx = pixel.x + pixel.y*_res.x;
+		uint sampleIdx = _sampleCount[idx]++;
+		if (_variance) {
+			Vector curr = _buffer[idx];
+			Vector delta = c - curr;
+			curr += delta/(sampleIdx + 1);
+			_variance[idx] += dot(delta, (c - curr)) / 3.f;
+		}
+
+		_buffer[idx] += (c - _buffer[idx])/(sampleIdx + 1);
+	}
+
+	inline Vector operator[](uint idx) const
+	{
+		return _buffer[idx];
+	}
+
+	inline Vector get(int x, int y) const
+	{
+		return _buffer[x + y*_res.x];
+	}
+
+	inline float variance(int x, int y) const
+	{
+		return _variance[x + y*_res.x]/std::max(uint(1), _sampleCount[x + y*_res.x] - 1);
+	}
+
+	// void WriteEXR(std::string &avg_name, std::string &var_name) {
+	// 	ref<Bitmap> avg_img = new Bitmap(Bitmap::ESpectrum, Bitmap::EFloat16, _res);
+	// 	ref<Bitmap> var_img = new Bitmap(Bitmap::ELuminance, Bitmap::EFloat16, _res);
+	// 	for(int y = 0; y < _res.y; y++)
+	// 		for(int x = 0; x < _res.x; x++) {
+	// 			Spectrum avg;
+	// 			Vector rgb = get(x, y);
+	// 			avg[0] = rgb.x;
+	// 			avg[1] = rgb.y;
+	// 			avg[2] = rgb.z;
+	// 			avg_img->setPixel(Point2i(x, y), avg);
+	//
+	// 			Spectrum var;
+	// 			var[0] = variance(x, y);
+	// 			var_img->setPixel(Point2i(x, y), var);
+	// 		}
+	// 	avg_img->write(Bitmap::EOpenEXR, avg_name);
+	// 	var_img->write(Bitmap::EOpenEXR, var_name);
+	// }
+};
 
 static StatsCounter avgPathLength("Path tracer", "Average path length", EAverage);
 
@@ -124,6 +205,36 @@ public:
 		ref<Sensor> sensor = static_cast<Sensor *>(sched->getResource(sensorResID));
 		ref<Film> film = sensor->getFilm();
 
+		auto size = film->getSize();
+
+		auto props = Properties("hdrfilm");
+		props.setInteger("width", size.x);
+		props.setInteger("height", size.y);
+		props.setBoolean("banner", false);
+		props.setBoolean("attachLog", false);
+		props.setString("pixelFormat", std::string(
+			"rgb,luminance,") +
+			"rgb,luminance," +
+			"luminance,luminance," +
+			"rgb,luminance," +
+			"rgb,luminance");
+		props.setString("channelNames", std::string(
+			"albedo,albedoVariance,") +
+			"normal,normalVariance," +
+			"depth,depthVariance," +
+			"diffuse,diffuseVariance," +
+			"specular,specularVariance");
+		m_features = static_cast<Film*>(PluginManager::getInstance()->createObject(MTS_CLASS(Film), props));
+		m_features->clear();
+		auto dir = scene->getDestinationFile().parent_path();
+		m_features->setDestinationFile(dir / (scene->getDestinationFile().stem().string() + "_features.exr"), 0);
+
+		m_albedo = std::make_unique<OutputBuffer>(size);
+		m_normal = std::make_unique<OutputBuffer>(size);
+		m_depth = std::make_unique<OutputBuffer>(size);
+		m_diffuse = std::make_unique<OutputBuffer>(size);
+		m_specular = std::make_unique<OutputBuffer>(size);
+
 		size_t nCores = sched->getCoreCount();
 		const Sampler *sampler = static_cast<const Sampler *>(sched->getResource(samplerResID, 0));
 		size_t sampleCount = sampler->getSampleCount();
@@ -149,6 +260,48 @@ public:
 		sched->wait(proc);
 		m_process = NULL;
 		sched->unregisterResource(integratorResID);
+
+		ref<ImageBlock> block = new ImageBlock(Bitmap::EMultiSpectrumAlphaWeight, size, film->getReconstructionFilter(), (int) (SPECTRUM_SAMPLES * 10 + 2), false);
+		for (int x = 0; x < size.x; ++x)
+			for (int y = 0; y < size.y; ++y) {
+				float temp[3 * 10 + 2];
+				{
+					Vector v = m_albedo->get(x, y);
+					temp[0] = v.x; temp[1] = v.y; temp[2] = v.z;
+					float f = m_albedo->variance(x, y);
+					temp[3] = temp[4] = temp[5] = f;
+				}
+				{
+					Vector v = m_normal->get(x, y);
+					temp[6] = v.x; temp[7] = v.y; temp[8] = v.z;
+					float f = m_normal->variance(x, y);
+					temp[9] = temp[10] = temp[11] = f;
+				}
+				{
+					Vector v = m_depth->get(x, y);
+					temp[12] = v.x; temp[13] = v.y; temp[14] = v.z;
+					float f = m_depth->variance(x, y);
+					temp[15] = temp[16] = temp[17] = f;
+				}
+				{
+					Vector v = m_diffuse->get(x, y);
+					temp[18] = v.x; temp[19] = v.y; temp[20] = v.z;
+					float f = m_diffuse->variance(x, y);
+					temp[21] = temp[22] = temp[23] = f;
+				}
+				{
+					Vector v = m_specular->get(x, y);
+					temp[24] = v.x; temp[25] = v.y; temp[26] = v.z;
+					float f = m_specular->variance(x, y);
+					temp[27] = temp[28] = temp[29] = f;
+				}
+				temp[30] = 1.f;
+				temp[31] = 1.f;
+				Point2 pos = Point2(x + 0.5f, y + 0.5f);
+				block->put(pos, temp);
+			}
+		m_features->put(block);
+		m_features->develop(scene, queue->getRenderTime(job));
 
 		return proc->getReturnStatus() == ParallelProcess::ESuccess;
 	}
@@ -196,7 +349,7 @@ public:
 
 				sensorRay.scaleDifferential(diffScaleFactor);
 
-				spec *= Li(sensorRay, rRec);
+				spec *= Li(sensorRay, rRec, offset);
 				block->put(samplePos, spec, rRec.alpha);
 				sampler->advance();
 			}
@@ -204,6 +357,10 @@ public:
 	}
 
 	Spectrum Li(const RayDifferential &r, RadianceQueryRecord &rRec) const {
+		return Spectrum();
+	}
+
+	Spectrum Li(const RayDifferential &r, RadianceQueryRecord &rRec, const Point2i &offset) const {
 		/* Some aliases and local variables */
 		const Scene *scene = rRec.scene;
 		Intersection &its = rRec.its;
@@ -218,6 +375,10 @@ public:
 
 		Spectrum throughput(1.0f);
 		Float eta = 1.0f;
+
+		bool featureRecored = false;
+		Spectrum roughAlbedo(1.f);
+		Float roughDepth = 0.f;
 
 		while (rRec.depth <= m_maxDepth || m_maxDepth < 0) {
 			if (!its.isValid()) {
@@ -235,6 +396,21 @@ public:
 			if (its.isEmitter() && (rRec.type & RadianceQueryRecord::EEmittedRadiance)
 				&& (!m_hideEmitters || scattered))
 				Li += throughput * its.Le(-ray.d);
+
+			if(!featureRecored && bsdf->isRough(its)) {
+				Vector rgb;
+				roughAlbedo *= bsdf->getDiffuseReflectance(its);
+				roughAlbedo.toLinearRGB(rgb.x, rgb.y, rgb.z);
+				m_albedo->addSample(offset, rgb);
+				Vector n = its.shFrame.n;
+				if(Frame::cosTheta(its.wi) < 0) n = -n;
+				m_normal->addSample(offset, n);
+				m_depth->addSample(offset, Vector(roughDepth + its.t));
+				featureRecored = true;
+			} else if(!featureRecored) {
+				roughAlbedo *= bsdf->getSpecularReflectance(its);
+				roughDepth += its.t;
+			}
 
 			/* Include radiance from a subsurface scattering model if requested */
 			if (its.hasSubsurface() && (rRec.type & RadianceQueryRecord::ESubsurfaceRadiance))
@@ -377,6 +553,12 @@ public:
 		avgPathLength.incrementBase();
 		avgPathLength += rRec.depth;
 
+		if(!featureRecored) {
+			m_albedo->addSample(offset, Vector(0.f));
+			m_normal->addSample(offset, -ray.d);
+			m_depth->addSample(offset, Vector(0.f));
+		}
+
 		return Li;
 	}
 
@@ -401,6 +583,15 @@ public:
 	}
 
 	MTS_DECLARE_CLASS()
+
+private:
+	mutable std::unique_ptr<OutputBuffer> m_albedo;
+	mutable std::unique_ptr<OutputBuffer> m_normal;
+	mutable std::unique_ptr<OutputBuffer> m_depth;
+	mutable std::unique_ptr<OutputBuffer> m_diffuse;
+	mutable std::unique_ptr<OutputBuffer> m_specular;
+
+	mutable ref<Film> m_features;
 };
 
 MTS_IMPLEMENT_CLASS_S(MIPathTracer, false, MonteCarloIntegrator)
