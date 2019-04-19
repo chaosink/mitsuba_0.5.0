@@ -379,6 +379,9 @@ public:
 		return component < (int) m_components.size()-1
 			? m_nested->getRoughness(its, component) : (Float) 0;
 	}
+	bool isRough(const Intersection &its) const {
+		return m_nested->isRough(its);
+	}
 
 	std::string toString() const {
 		std::ostringstream oss;

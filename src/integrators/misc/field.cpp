@@ -122,10 +122,37 @@ public:
 	Spectrum Li(const RayDifferential &ray, RadianceQueryRecord &rRec) const {
 		Spectrum result(m_undefined);
 
-		if (!rRec.rayIntersect(ray))
-			return result;
-
 		Intersection &its = rRec.its;
+		const Scene *scene = rRec.scene;
+		RayDifferential r = ray;
+
+		auto final_result = [&]() {
+			if(m_field == EAlbedo) {
+				return scene->evalEnvironment(r);
+			} else if(m_field == EShadingNormal || m_field == EGeometricNormal) {
+				result.fromLinearRGB(-r.d.x, -r.d.y, -r.d.z);
+				return result;
+			}
+			return result;
+		};
+
+		if (!rRec.rayIntersect(ray))
+			return final_result();
+
+		if(!its.shape) return final_result();
+		const BSDF *bsdf = its.shape->getBSDF();
+
+		while(!bsdf->isRough(its)) {
+			if(m_field == EDistance)
+				result += Spectrum(its.t);
+			BSDFSamplingRecord bRec(its, rRec.sampler, ERadiance);
+			Float bsdfPdf;
+			Spectrum bsdfWeight = bsdf->sample(bRec, bsdfPdf, rRec.nextSample2D());
+			r = Ray(its.p, its.toWorld(bRec.wo), ray.time);
+			if(!scene->rayIntersect(r, its))
+				return final_result();
+			bsdf = its.shape->getBSDF();
+		}
 
 		switch (m_field) {
 			case EPosition:
@@ -139,7 +166,7 @@ public:
 				}
 				break;
 			case EDistance:
-				result = Spectrum(its.t);
+				result += Spectrum(its.t);
 				break;
 			case EGeometricNormal:
 				result.fromLinearRGB(its.geoFrame.n.x, its.geoFrame.n.y, its.geoFrame.n.z);

@@ -214,6 +214,8 @@ public:
  */
 class MTS_EXPORT_RENDER BSDF : public ConfigurableObject, public HWResource {
 public:
+	static constexpr Float RoughMicrofacetThreshold = 0.011f;
+	static constexpr Float RoughPhongThreshold = 9999.f;
 	/**
 	 * \brief This list of flags is used to classify the different
 	 * types of lobes that are implemented in a BSDF instance.
@@ -457,6 +459,9 @@ public:
 	 * An infinite value indicates a component that is ideally diffuse
 	 */
 	virtual Float getRoughness(const Intersection &its, int index) const;
+	virtual bool isRough(const Intersection &/*its*/) const {
+		return hasComponent(EDiffuse);
+	}
 
 	/**
 	 * \brief Sometimes, BSDF models make use of a perturbed frame for
