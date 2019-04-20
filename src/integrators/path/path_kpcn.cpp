@@ -82,6 +82,11 @@ public:
 		return _variance[x + y*_res.x]/std::max(uint(1), _sampleCount[x + y*_res.x] - 1);
 	}
 
+	inline uint sampleCount(int x, int y) const
+	{
+		return _sampleCount[x + y*_res.x];
+	}
+
 	// void WriteEXR(std::string &avg_name, std::string &var_name) {
 	// 	ref<Bitmap> avg_img = new Bitmap(Bitmap::ESpectrum, Bitmap::EFloat16, _res);
 	// 	ref<Bitmap> var_img = new Bitmap(Bitmap::ELuminance, Bitmap::EFloat16, _res);
@@ -95,7 +100,7 @@ public:
 	// 			avg_img->setPixel(Point2i(x, y), avg);
 	//
 	// 			Spectrum var;
-	// 			var[0] = variance(x, y);
+	// 			var[0] = variance(x, y) / sampleCount(x, y);
 	// 			var_img->setPixel(Point2i(x, y), var);
 	// 		}
 	// 	avg_img->write(Bitmap::EOpenEXR, avg_name);
@@ -268,31 +273,31 @@ public:
 				{
 					Vector v = m_albedo->get(x, y);
 					temp[0] = v.x; temp[1] = v.y; temp[2] = v.z;
-					float f = m_albedo->variance(x, y);
+					float f = m_albedo->variance(x, y) / m_albedo->sampleCount(x, y);
 					temp[3] = temp[4] = temp[5] = f;
 				}
 				{
 					Vector v = m_normal->get(x, y);
 					temp[6] = v.x; temp[7] = v.y; temp[8] = v.z;
-					float f = m_normal->variance(x, y);
+					float f = m_normal->variance(x, y) / m_normal->sampleCount(x, y);
 					temp[9] = temp[10] = temp[11] = f;
 				}
 				{
 					Vector v = m_depth->get(x, y);
 					temp[12] = v.x; temp[13] = v.y; temp[14] = v.z;
-					float f = m_depth->variance(x, y);
+					float f = m_depth->variance(x, y) / m_depth->sampleCount(x, y);
 					temp[15] = temp[16] = temp[17] = f;
 				}
 				{
 					Vector v = m_diffuse->get(x, y);
 					temp[18] = v.x; temp[19] = v.y; temp[20] = v.z;
-					float f = m_diffuse->variance(x, y);
+					float f = m_diffuse->variance(x, y) / m_diffuse->sampleCount(x, y);
 					temp[21] = temp[22] = temp[23] = f;
 				}
 				{
 					Vector v = m_specular->get(x, y);
 					temp[24] = v.x; temp[25] = v.y; temp[26] = v.z;
-					float f = m_specular->variance(x, y);
+					float f = m_specular->variance(x, y) / m_specular->sampleCount(x, y);
 					temp[27] = temp[28] = temp[29] = f;
 				}
 				temp[30] = 1.f;
@@ -379,14 +384,22 @@ public:
 		bool featureRecored = false;
 		Spectrum roughAlbedo(1.f);
 		Float roughDepth = 0.f;
+		bool dsSplit = false;
+		Spectrum LiDiffuse(0.f);
+		Spectrum throughputDiffuse(1.f);
+		Spectrum LiTemp;
 
 		while (rRec.depth <= m_maxDepth || m_maxDepth < 0) {
 			if (!its.isValid()) {
 				/* If no intersection could be found, potentially return
 				   radiance from a environment luminaire if it exists */
 				if ((rRec.type & RadianceQueryRecord::EEmittedRadiance)
-					&& (!m_hideEmitters || scattered))
-					Li += throughput * scene->evalEnvironment(ray);
+					&& (!m_hideEmitters || scattered)) {
+					LiTemp = scene->evalEnvironment(ray);
+					Li += LiTemp * throughput;
+					if(dsSplit)
+						LiDiffuse += LiTemp * throughputDiffuse;
+				}
 				break;
 			}
 
@@ -394,8 +407,12 @@ public:
 
 			/* Possibly include emitted radiance if requested */
 			if (its.isEmitter() && (rRec.type & RadianceQueryRecord::EEmittedRadiance)
-				&& (!m_hideEmitters || scattered))
-				Li += throughput * its.Le(-ray.d);
+				&& (!m_hideEmitters || scattered)) {
+				LiTemp = its.Le(-ray.d);
+				Li += LiTemp * throughput;
+				if(dsSplit)
+					LiDiffuse += LiTemp * throughputDiffuse;
+			}
 
 			if(!featureRecored && bsdf->isRough(its)) {
 				Vector rgb;
@@ -413,8 +430,12 @@ public:
 			}
 
 			/* Include radiance from a subsurface scattering model if requested */
-			if (its.hasSubsurface() && (rRec.type & RadianceQueryRecord::ESubsurfaceRadiance))
-				Li += throughput * its.LoSub(scene, rRec.sampler, -ray.d, rRec.depth);
+			if (its.hasSubsurface() && (rRec.type & RadianceQueryRecord::ESubsurfaceRadiance)) {
+				LiTemp = its.LoSub(scene, rRec.sampler, -ray.d, rRec.depth);
+				Li += LiTemp * throughput;
+				if(dsSplit)
+					LiDiffuse += LiTemp * throughputDiffuse;
+			}
 
 			if ((rRec.depth >= m_maxDepth && m_maxDepth > 0)
 				|| (m_strictNormals && dot(ray.d, its.geoFrame.n)
@@ -457,7 +478,15 @@ public:
 
 						/* Weight using the power heuristic */
 						Float weight = miWeight(dRec.pdf, bsdfPdf);
-						Li += throughput * value * bsdfVal * weight;
+						LiTemp =  value * weight;
+						Li += LiTemp * throughput * bsdfVal;
+						if(!dsSplit) {
+							bRec.typeMask = BSDF::EDiffuse;
+							const Spectrum bsdfValDiffuse = bsdf->eval(bRec);
+							LiDiffuse += LiTemp * throughputDiffuse * bsdfValDiffuse;
+						} else {
+							LiDiffuse += LiTemp * throughputDiffuse * bsdfVal;
+						}
 					}
 				}
 			}
@@ -480,6 +509,16 @@ public:
 			Float woDotGeoN = dot(its.geoFrame.n, wo);
 			if (m_strictNormals && woDotGeoN * Frame::cosTheta(bRec.wo) <= 0)
 				break;
+
+			if(!dsSplit && bsdf->isRough(its)) {
+				BSDFSamplingRecord b(bRec);
+				b.typeMask = BSDF::EDiffuse;
+				Spectrum d = bsdf->eval(b, b.sampledType & BSDF::EDelta ? EDiscrete : ESolidAngle);
+				throughputDiffuse *= d / bsdfPdf;
+				dsSplit = true;
+			} else {
+				throughputDiffuse *= bsdfWeight;
+			}
 
 			bool hitEmitter = false;
 			Spectrum value;
@@ -523,7 +562,10 @@ public:
 				   implemented direct illumination sampling technique */
 				const Float lumPdf = (!(bRec.sampledType & BSDF::EDelta)) ?
 					scene->pdfEmitterDirect(dRec) : 0;
-				Li += throughput * value * miWeight(bsdfPdf, lumPdf);
+				Spectrum LiTemp =  value * miWeight(bsdfPdf, lumPdf);
+				Li += LiTemp * throughput;
+				if(dsSplit)
+					LiDiffuse += LiTemp * throughputDiffuse;
 			}
 
 			/* ==================================================================== */
@@ -546,6 +588,7 @@ public:
 				if (rRec.nextSample1D() >= q)
 					break;
 				throughput /= q;
+				throughputDiffuse /= q;
 			}
 		}
 
@@ -558,6 +601,12 @@ public:
 			m_normal->addSample(offset, -ray.d);
 			m_depth->addSample(offset, Vector(0.f));
 		}
+		Vector v;
+		LiDiffuse.toLinearRGB(v.x, v.y, v.z);
+		m_diffuse->addSample(offset, v);
+		Spectrum LiSpecular = Li - LiDiffuse;
+		LiSpecular.toLinearRGB(v.x, v.y, v.z);
+		m_specular->addSample(offset, v);
 
 		return Li;
 	}
