@@ -649,6 +649,9 @@ public:
 		Float F = fresnelDielectricExt(Frame::cosTheta(its.wi), cosThetaT, m_eta);
 		return m_specularReflectance->eval(its) * F + m_specularTransmittance->eval(its) * (1 - F);
 	}
+	Spectrum getDiffuseReflectance(const Intersection &its) const {
+		return isRough(its) ? getSpecularReflectance(its) : Spectrum(0.f);
+	}
 
 	std::string toString() const {
 		std::ostringstream oss;

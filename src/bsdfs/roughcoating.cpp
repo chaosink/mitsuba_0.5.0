@@ -467,6 +467,9 @@ public:
 	Spectrum getSpecularReflectance(const Intersection &its) const {
 		return m_specularReflectance->eval(its);
 	}
+	Spectrum getDiffuseReflectance(const Intersection &its) const {
+		return isRough(its) ? getSpecularReflectance(its) : Spectrum(0.f);
+	}
 
 	void addChild(const std::string &name, ConfigurableObject *child) {
 		if (child->getClass()->derivesFrom(MTS_CLASS(BSDF))) {
