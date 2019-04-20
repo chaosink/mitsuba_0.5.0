@@ -274,6 +274,9 @@ public:
 	Float getRoughness(const Intersection &its, int component) const {
 		return std::numeric_limits<Float>::infinity();
 	}
+	bool isRough(const Intersection &its) const {
+		return true;
+	}
 
 	std::string toString() const {
 		std::ostringstream oss;

@@ -275,6 +275,9 @@ public:
 		else
 			return std::numeric_limits<Float>::infinity();
 	}
+	bool isRough(const Intersection &its) const {
+		return m_exponent->eval(its).average() < BSDF::RoughPhongThreshold;
+	}
 
 	std::string toString() const {
 		std::ostringstream oss;

@@ -291,6 +291,12 @@ public:
 		component = m_indices[component].second;
 		return m_bsdfs[bsdfIndex]->getRoughness(its, component);
 	}
+	bool isRough(const Intersection &its) const {
+		for (size_t i=0; i<m_bsdfs.size(); ++i)
+			if (m_weights[i] && m_bsdfs[i]->isRough(its))
+				return true;
+		return false;
+	}
 
 	std::string toString() const {
 		std::ostringstream oss;

@@ -641,6 +641,9 @@ public:
 		return 0.5f * (m_alphaU->eval(its).average()
 			+ m_alphaV->eval(its).average());
 	}
+	bool isRough(const Intersection &its) const {
+		return getRoughness(its, 0) > BSDF::RoughMicrofacetThreshold;
+	}
 
 	std::string toString() const {
 		std::ostringstream oss;

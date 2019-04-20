@@ -414,6 +414,9 @@ public:
 		   in Manifold Exploration */
 		return std::numeric_limits<Float>::infinity();
 	}
+	bool isRough(const Intersection &its) const {
+		return true;
+	}
 
 	std::string toString() const {
 		std::ostringstream oss;

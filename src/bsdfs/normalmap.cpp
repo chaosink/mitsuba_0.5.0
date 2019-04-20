@@ -248,6 +248,9 @@ public:
 	Float getRoughness(const Intersection &its, int component) const {
 		return m_nested->getRoughness(its, component);
 	}
+	bool isRough(const Intersection &its) const {
+		return m_nested->isRough(its);
+	}
 
 	std::string toString() const {
 		std::ostringstream oss;

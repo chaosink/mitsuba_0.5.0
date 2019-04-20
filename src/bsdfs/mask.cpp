@@ -221,6 +221,9 @@ public:
 	Float getRoughness(const Intersection &its, int component) const {
 		return m_nestedBSDF->getRoughness(its, component);
 	}
+	bool isRough(const Intersection &its) const {
+		return m_nestedBSDF->isRough(its);
+	}
 
 	void addChild(const std::string &name, ConfigurableObject *child) {
 		if (child->getClass()->derivesFrom(MTS_CLASS(Texture)) && name == "opacity")

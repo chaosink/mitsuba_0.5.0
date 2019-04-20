@@ -460,6 +460,10 @@ public:
 			? m_nested->getRoughness(its, component)
 			: m_alpha->eval(its).average();
 	}
+	bool isRough(const Intersection &its) const {
+		return m_alpha->eval(its).average() > BSDF::RoughMicrofacetThreshold
+			|| m_nested->isRough(its);
+	}
 
 	void addChild(const std::string &name, ConfigurableObject *child) {
 		if (child->getClass()->derivesFrom(MTS_CLASS(BSDF))) {

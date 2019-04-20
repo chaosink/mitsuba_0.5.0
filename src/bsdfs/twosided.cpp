@@ -210,6 +210,12 @@ public:
 			      -m_nestedBRDF[0]->getComponentCount());
 		}
 	}
+	bool isRough(const Intersection &its) const {
+		if (Frame::cosTheta(its.wi) > 0)
+			return m_nestedBRDF[0]->isRough(its);
+		 else
+			return m_nestedBRDF[1]->isRough(its);
+	}
 
 	Float getEta() const {
 		return 1.0f;
