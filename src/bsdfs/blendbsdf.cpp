@@ -274,6 +274,12 @@ public:
 		return (weight != 1.f && m_bsdfs[0]->isRough(its))
 			|| (weight != 0.f && m_bsdfs[1]->isRough(its));
 	}
+	Spectrum getSpecularReflectance(const Intersection &its) const {
+		Float weight = std::min((Float) 1.0f, std::max((Float) 0.0f,
+			m_weight->eval(its).average()));
+		return m_bsdfs[0]->getSpecularReflectance(its) * (1-weight) +
+			m_bsdfs[1]->getSpecularReflectance(its) * weight;
+	}
 
 	void addChild(const std::string &name, ConfigurableObject *child) {
 		if (child->getClass()->derivesFrom(MTS_CLASS(BSDF))) {

@@ -438,6 +438,9 @@ public:
 	bool isRough(const Intersection &its) const {
 		return getRoughness(its, 0) > BSDF::RoughMicrofacetThreshold;
 	}
+	Spectrum getSpecularReflectance(const Intersection &its) const {
+		return m_specularReflectance->eval(its);
+	}
 
 	std::string toString() const {
 		std::ostringstream oss;

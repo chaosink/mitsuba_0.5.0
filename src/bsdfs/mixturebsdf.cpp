@@ -297,6 +297,12 @@ public:
 				return true;
 		return false;
 	}
+	Spectrum getSpecularReflectance(const Intersection &its) const {
+		Spectrum result(0.f);
+		for (size_t i=0; i<m_bsdfs.size(); ++i)
+			result += m_bsdfs[i]->getSpecularReflectance(its) * m_weights[i];
+		return result;
+	}
 
 	std::string toString() const {
 		std::ostringstream oss;

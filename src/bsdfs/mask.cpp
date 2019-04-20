@@ -224,6 +224,9 @@ public:
 	bool isRough(const Intersection &its) const {
 		return m_nestedBSDF->isRough(its);
 	}
+	Spectrum getSpecularReflectance(const Intersection &its) const {
+		return m_nestedBSDF->getSpecularReflectance(its);
+	}
 
 	void addChild(const std::string &name, ConfigurableObject *child) {
 		if (child->getClass()->derivesFrom(MTS_CLASS(Texture)) && name == "opacity")

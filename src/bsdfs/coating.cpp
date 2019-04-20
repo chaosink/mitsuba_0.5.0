@@ -382,6 +382,9 @@ public:
 	bool isRough(const Intersection &its) const {
 		return m_nested->isRough(its);
 	}
+	Spectrum getSpecularReflectance(const Intersection &its) const {
+		return m_specularReflectance->eval(its);
+	}
 
 	std::string toString() const {
 		std::ostringstream oss;

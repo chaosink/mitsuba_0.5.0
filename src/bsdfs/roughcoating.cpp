@@ -464,6 +464,9 @@ public:
 		return m_alpha->eval(its).average() > BSDF::RoughMicrofacetThreshold
 			|| m_nested->isRough(its);
 	}
+	Spectrum getSpecularReflectance(const Intersection &its) const {
+		return m_specularReflectance->eval(its);
+	}
 
 	void addChild(const std::string &name, ConfigurableObject *child) {
 		if (child->getClass()->derivesFrom(MTS_CLASS(BSDF))) {

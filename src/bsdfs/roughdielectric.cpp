@@ -644,6 +644,11 @@ public:
 	bool isRough(const Intersection &its) const {
 		return getRoughness(its, 0) > BSDF::RoughMicrofacetThreshold;
 	}
+	Spectrum getSpecularReflectance(const Intersection &its) const {
+		Float cosThetaT;
+		Float F = fresnelDielectricExt(Frame::cosTheta(its.wi), cosThetaT, m_eta);
+		return m_specularReflectance->eval(its) * F + m_specularTransmittance->eval(its) * (1 - F);
+	}
 
 	std::string toString() const {
 		std::ostringstream oss;

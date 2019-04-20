@@ -366,6 +366,9 @@ public:
 		else
 			return std::numeric_limits<Float>::infinity();
 	}
+	Spectrum getSpecularReflectance(const Intersection &its) const {
+		return m_specularReflectance->eval(its);
+	}
 
 	Shader *createShader(Renderer *renderer) const;
 

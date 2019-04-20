@@ -287,6 +287,9 @@ public:
 	Float getRoughness(const Intersection &its, int component) const {
 		return 0.0f;
 	}
+	Spectrum getSpecularReflectance(const Intersection &its) const {
+		return m_specularReflectance->eval(its);
+	}
 
 	std::string toString() const {
 		std::ostringstream oss;

@@ -216,6 +216,12 @@ public:
 		 else
 			return m_nestedBRDF[1]->isRough(its);
 	}
+	Spectrum getSpecularReflectance(const Intersection &its) const {
+		if (Frame::cosTheta(its.wi) > 0)
+			return m_nestedBRDF[0]->getSpecularReflectance(its);
+		else
+			return m_nestedBRDF[1]->getSpecularReflectance(its);
+	}
 
 	Float getEta() const {
 		return 1.0f;
