@@ -381,10 +381,9 @@ public:
 		Spectrum throughput(1.0f);
 		Float eta = 1.0f;
 
-		bool featureRecored = false;
+		bool foundRough = false;
 		Spectrum roughAlbedo(1.f);
 		Float roughDepth = 0.f;
-		bool dsSplit = false;
 		Spectrum LiDiffuse(0.f);
 		Spectrum throughputDiffuse(1.f);
 		Spectrum LiTemp;
@@ -397,7 +396,7 @@ public:
 					&& (!m_hideEmitters || scattered)) {
 					LiTemp = scene->evalEnvironment(ray);
 					Li += LiTemp * throughput;
-					if(dsSplit)
+					if(foundRough)
 						LiDiffuse += LiTemp * throughputDiffuse;
 				}
 				break;
@@ -410,30 +409,15 @@ public:
 				&& (!m_hideEmitters || scattered)) {
 				LiTemp = its.Le(-ray.d);
 				Li += LiTemp * throughput;
-				if(dsSplit)
+				if(foundRough)
 					LiDiffuse += LiTemp * throughputDiffuse;
-			}
-
-			if(!featureRecored && bsdf->isRough(its)) {
-				Vector rgb;
-				roughAlbedo *= bsdf->getDiffuseReflectance(its);
-				roughAlbedo.toLinearRGB(rgb.x, rgb.y, rgb.z);
-				m_albedo->addSample(offset, rgb);
-				Vector n = its.shFrame.n;
-				if(Frame::cosTheta(its.wi) < 0) n = -n;
-				m_normal->addSample(offset, n);
-				m_depth->addSample(offset, Vector(roughDepth + its.t));
-				featureRecored = true;
-			} else if(!featureRecored) {
-				roughAlbedo *= bsdf->getSpecularReflectance(its);
-				roughDepth += its.t;
 			}
 
 			/* Include radiance from a subsurface scattering model if requested */
 			if (its.hasSubsurface() && (rRec.type & RadianceQueryRecord::ESubsurfaceRadiance)) {
 				LiTemp = its.LoSub(scene, rRec.sampler, -ray.d, rRec.depth);
 				Li += LiTemp * throughput;
-				if(dsSplit)
+				if(foundRough)
 					LiDiffuse += LiTemp * throughputDiffuse;
 			}
 
@@ -480,7 +464,7 @@ public:
 						Float weight = miWeight(dRec.pdf, bsdfPdf);
 						LiTemp =  value * weight;
 						Li += LiTemp * throughput * bsdfVal;
-						if(!dsSplit) {
+						if(!foundRough) {
 							bRec.typeMask = BSDF::EDiffuse;
 							const Spectrum bsdfValDiffuse = bsdf->eval(bRec);
 							LiDiffuse += LiTemp * throughputDiffuse * bsdfValDiffuse;
@@ -499,26 +483,42 @@ public:
 			Float bsdfPdf;
 			BSDFSamplingRecord bRec(its, rRec.sampler, ERadiance);
 			Spectrum bsdfWeight = bsdf->sample(bRec, bsdfPdf, rRec.nextSample2D());
-			if (bsdfWeight.isZero())
-				break;
 
 			scattered |= bRec.sampledType != BSDF::ENull;
+
+			if(scattered && !foundRough && bsdf->isRough(its)) {
+				Vector rgb;
+				roughAlbedo *= bsdf->getDiffuseReflectance(its);
+				roughAlbedo.toLinearRGB(rgb.x, rgb.y, rgb.z);
+				m_albedo->addSample(offset, rgb);
+				Vector n = its.shFrame.n;
+				if(Frame::cosTheta(its.wi) < 0) n = -n;
+				m_normal->addSample(offset, n);
+				m_depth->addSample(offset, Vector(roughDepth + its.t));
+
+				BSDFSamplingRecord b(bRec);
+				b.typeMask = BSDF::EDiffuse;
+				Spectrum d = bsdf->eval(b, b.sampledType & BSDF::EDelta ? EDiscrete : ESolidAngle);
+				throughputDiffuse *= d / bsdfPdf;
+
+				foundRough = true;
+			} else {
+				if(!foundRough) {
+					if(scattered)
+						roughAlbedo *= bsdf->getSpecularReflectance(its);
+					roughDepth += its.t;
+				}
+				throughputDiffuse *= bsdfWeight;
+			}
+
+			if (bsdfWeight.isZero())
+				break;
 
 			/* Prevent light leaks due to the use of shading normals */
 			const Vector wo = its.toWorld(bRec.wo);
 			Float woDotGeoN = dot(its.geoFrame.n, wo);
 			if (m_strictNormals && woDotGeoN * Frame::cosTheta(bRec.wo) <= 0)
 				break;
-
-			if(!dsSplit && bsdf->isRough(its)) {
-				BSDFSamplingRecord b(bRec);
-				b.typeMask = BSDF::EDiffuse;
-				Spectrum d = bsdf->eval(b, b.sampledType & BSDF::EDelta ? EDiscrete : ESolidAngle);
-				throughputDiffuse *= d / bsdfPdf;
-				dsSplit = true;
-			} else {
-				throughputDiffuse *= bsdfWeight;
-			}
 
 			bool hitEmitter = false;
 			Spectrum value;
@@ -564,7 +564,7 @@ public:
 					scene->pdfEmitterDirect(dRec) : 0;
 				Spectrum LiTemp =  value * miWeight(bsdfPdf, lumPdf);
 				Li += LiTemp * throughput;
-				if(dsSplit)
+				if(foundRough)
 					LiDiffuse += LiTemp * throughputDiffuse;
 			}
 
@@ -596,7 +596,7 @@ public:
 		avgPathLength.incrementBase();
 		avgPathLength += rRec.depth;
 
-		if(!featureRecored) {
+		if(!foundRough) {
 			m_albedo->addSample(offset, Vector(0.f));
 			m_normal->addSample(offset, -ray.d);
 			m_depth->addSample(offset, Vector(0.f));
