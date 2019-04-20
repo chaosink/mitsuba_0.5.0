@@ -211,6 +211,16 @@
 		</descr>
 	</plugin>
 
+	<plugin type="integrator" name="path_kpcn" readableName="Path tracer KPCN"
+			show="true" className="MIPathTracer" extends="MonteCarloIntegrator">
+		<descr>
+			This integrator implements a basic path tracer with multiple importance sampling and is a <em>good
+			default choice</em> when there is no strong reason to prefer another method.
+			It does not account for participating media, such as fog or smoke&mdash;see
+			the volumetric path tracer if this is needed.
+		</descr>
+	</plugin>
+
 	<plugin type="integrator" name="volpath_simple" readableName = "Volumetric path tracer (Simple)"
 			show="true" className="SimpleVolumetricPathTracer" extends="MonteCarloIntegrator">
 		<descr>
