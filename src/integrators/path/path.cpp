@@ -146,7 +146,7 @@ public:
 
 			/* Possibly include emitted radiance if requested */
 			if (its.isEmitter() && (rRec.type & RadianceQueryRecord::EEmittedRadiance)
-				&& (!m_hideEmitters || scattered))
+				&& (!(m_hideEmitters || (bsdf->getType() & BSDF::ENull)) || scattered))
 				Li += throughput * its.Le(-ray.d);
 
 			/* Include radiance from a subsurface scattering model if requested */
@@ -225,7 +225,7 @@ public:
 			ray = Ray(its.p, wo, ray.time);
 			if (scene->rayIntersect(ray, its)) {
 				/* Intersected something - check if it was a luminaire */
-				if (its.isEmitter()) {
+				if (its.isEmitter() && scattered) {
 					value = its.Le(-ray.d);
 					dRec.setQuery(ray, its);
 					hitEmitter = true;

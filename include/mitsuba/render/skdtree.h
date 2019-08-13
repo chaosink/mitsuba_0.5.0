@@ -23,6 +23,7 @@
 #include <mitsuba/render/shape.h>
 #include <mitsuba/render/sahkdtree3.h>
 #include <mitsuba/render/triaccel.h>
+#include <mitsuba/render/bsdf.h>
 
 #if defined(MTS_KD_CONSERVE_MEMORY)
 #if defined(MTS_HAS_COHERENT_RT)
@@ -327,6 +328,8 @@ protected:
 		const TriAccel &ta = m_triAccel[idx];
 		uint32_t shapeIndex = ta.shapeIndex;
 		const Shape *shape = m_shapes[shapeIndex];
+		if (shape->getBSDF()->getType() & BSDF::ENull)
+			return false;
 		if (EXPECT_TAKEN(m_triAccel[idx].k != KNoTriangleFlag)) {
 			Float tempU, tempV, tempT;
 			return ta.rayIntersect(ray, mint, maxt, tempU, tempV, tempT);
