@@ -156,9 +156,6 @@ public:
 				sensorSubpath.vertex(i-1)->rrWeight *
 				sensorSubpath.edge(i-1)->weight[ERadiance];
 
-		std::vector<int> depthSampleCount(
-			emitterSubpath.vertexCount() +
-			sensorSubpath.vertexCount() + 1);
 		std::vector<Spectrum> depthValues(
 			emitterSubpath.vertexCount() +
 			sensorSubpath.vertexCount() + 1, Spectrum(0.f));
@@ -325,21 +322,17 @@ public:
 				else
 					// wr->putLightSample(samplePos, value * miWeight);
 					lightImageSamples.emplace_back(s + t, samplePos, value);
-				depthSampleCount[s + t]++;
 			}
 		}
 		// wr->putSample(initialSamplePos, sampleValue);
 
-		/// Though similar results but wrong implementation.
-		/// Should record samples in different (s,t) buffers, average all buffers whose s-t-sum is
-		/// equal, and sum all the averaged buffers.
-		for(int i = 0; i < depthSampleCount.size(); i++)
-			if(depthSampleCount[i])
-				sampleValue += depthValues[i] / depthSampleCount[i];
+		// Technique count: i - (m_config.lightImage ? 0 : 1).
+		for(int i = 2; i < depthValues.size(); i++)
+			sampleValue += depthValues[i] / (i - (m_config.lightImage ? 0 : 1));
 		wr->putSample(initialSamplePos, sampleValue);
 
 		for(const auto &s: lightImageSamples)
-			wr->putLightSample(s.pos, s.value / depthSampleCount[s.depth]);
+			wr->putLightSample(s.pos, s.value / s.depth);
 	}
 
 	ref<WorkProcessor> clone() const {
