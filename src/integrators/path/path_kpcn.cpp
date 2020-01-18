@@ -300,8 +300,8 @@ public:
 					float f = m_specular->variance(x, y) / m_specular->sampleCount(x, y);
 					temp[27] = temp[28] = temp[29] = f;
 				}
-				temp[30] = 1.f;
-				temp[31] = 1.f;
+				temp[30] = 1.f; // alpha
+				temp[31] = 1.f; // reconstruction filter weight
 				Point2 pos = Point2(x + 0.5f, y + 0.5f);
 				block->put(pos, temp);
 			}
