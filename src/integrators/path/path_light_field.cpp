@@ -21,6 +21,8 @@
 #include <mitsuba/render/renderproc.h>
 #include <mitsuba/core/plugin.h>
 
+#include <iomanip>
+
 MTS_NAMESPACE_BEGIN
 
 template<typename T>
@@ -197,7 +199,10 @@ static StatsCounter avgPathLength("Path tracer", "Average path length", EAverage
 class MIPathTracer : public MonteCarloIntegrator {
 public:
 	MIPathTracer(const Properties &props)
-		: MonteCarloIntegrator(props) { }
+		: MonteCarloIntegrator(props) {
+		m_lightFieldResolution = props.getInteger("lightFieldResolution", 4);
+		m_lightFieldBlockCount = m_lightFieldResolution * m_lightFieldResolution;
+	}
 
 	/// Unserialize from a binary data stream
 	MIPathTracer(Stream *stream, InstanceManager *manager)
@@ -219,6 +224,11 @@ public:
 		m_depth = std::make_unique<OutputBuffer>(size);
 		m_diffuse = std::make_unique<OutputBuffer>(size);
 		m_specular = std::make_unique<OutputBuffer>(size);
+
+		// light fields buffer
+		m_lightFieldBlocks.resize(m_lightFieldBlockCount);
+		for (auto &l: m_lightFieldBlocks)
+			l = std::make_unique<OutputBuffer>(size);
 
 		size_t nCores = sched->getCoreCount();
 		const Sampler *sampler = static_cast<const Sampler *>(sched->getResource(samplerResID, 0));
@@ -246,42 +256,124 @@ public:
 		m_process = NULL;
 		sched->unregisterResource(integratorResID);
 
-		ref<ImageBlock> block = new ImageBlock(Bitmap::EMultiSpectrumAlphaWeight, size, film->getReconstructionFilter(), (int) (SPECTRUM_SAMPLES * 10 + 2), false);
+		{
+			ref<ImageBlock> block = new ImageBlock(Bitmap::EMultiSpectrumAlphaWeight, size, film->getReconstructionFilter(), (int) (SPECTRUM_SAMPLES * 10 + 2), false);
+			for (int x = 0; x < size.x; ++x)
+				for (int y = 0; y < size.y; ++y) {
+					float temp[3 * 10 + 2];
+					{
+						Vector v = m_albedo->get(x, y);
+						temp[0] = v.x; temp[1] = v.y; temp[2] = v.z;
+						float f = m_albedo->variance(x, y) / m_albedo->sampleCount(x, y);
+						temp[3] = temp[4] = temp[5] = f;
+					}
+					{
+						Vector v = m_normal->get(x, y);
+						temp[6] = v.x; temp[7] = v.y; temp[8] = v.z;
+						float f = m_normal->variance(x, y) / m_normal->sampleCount(x, y);
+						temp[9] = temp[10] = temp[11] = f;
+					}
+					{
+						Vector v = m_depth->get(x, y);
+						temp[12] = v.x; temp[13] = v.y; temp[14] = v.z;
+						float f = m_depth->variance(x, y) / m_depth->sampleCount(x, y);
+						temp[15] = temp[16] = temp[17] = f;
+					}
+					{
+						Vector v = m_diffuse->get(x, y);
+						temp[18] = v.x; temp[19] = v.y; temp[20] = v.z;
+						float f = m_diffuse->variance(x, y) / m_diffuse->sampleCount(x, y);
+						temp[21] = temp[22] = temp[23] = f;
+					}
+					{
+						Vector v = m_specular->get(x, y);
+						temp[24] = v.x; temp[25] = v.y; temp[26] = v.z;
+						float f = m_specular->variance(x, y) / m_specular->sampleCount(x, y);
+						temp[27] = temp[28] = temp[29] = f;
+					}
+					temp[30] = 1.f; // alpha
+					temp[31] = 1.f; // reconstruction filter weight
+					Point2 pos = Point2(x + 0.5f, y + 0.5f);
+					block->put(pos, temp);
+				}
+
+			auto props = Properties("hdrfilm");
+			props.setInteger("width", size.x);
+			props.setInteger("height", size.y);
+			props.setBoolean("banner", false);
+			props.setBoolean("attachLog", false);
+			props.setString("pixelFormat", std::string("rgb,luminance") +
+				",rgb,luminance" +
+				",luminance,luminance" +
+				",rgb,luminance" +
+				",rgb,luminance");
+			props.setString("channelNames", std::string("albedo,albedoVariance") +
+				",normal,normalVariance" +
+				",depth,depthVariance" +
+				",diffuse,diffuseVariance" +
+				",specular,specularVariance");
+			ref<Film> featuresFilm = static_cast<Film*>(PluginManager::getInstance()->createObject(MTS_CLASS(Film), props));
+			featuresFilm->clear();
+			featuresFilm->put(block);
+			auto file_name = scene->getDestinationFile().stem().string() + "_features.exr";
+			featuresFilm->setDestinationFile(file_dir / file_name, 0);
+			featuresFilm->develop(scene, queue->getRenderTime(job));
+		}
+
+		int numberWidth;
+		{
+			std::ostringstream oss;
+			oss << m_lightFieldBlockCount;
+			numberWidth = oss.str().size();
+		}
+
+#define MULTIPLE_EXRS_WITH_SINGLE_CHANNEL
+#ifdef MULTIPLE_EXRS_WITH_SINGLE_CHANNEL // multiple EXRs with single channel
+		ref<ImageBlock> block = new ImageBlock(Bitmap::ESpectrumAlphaWeight, size, film->getReconstructionFilter(), (int) (SPECTRUM_SAMPLES + 2), false);
+
+		auto props = Properties("hdrfilm");
+		props.setInteger("width", size.x);
+		props.setInteger("height", size.y);
+		props.setBoolean("banner", false);
+		props.setBoolean("attachLog", false);
+		props.setString("pixelFormat", "rgb");
+		ref<Film> lightFieldFilm = static_cast<Film*>(PluginManager::getInstance()->createObject(MTS_CLASS(Film), props));
+
+		for (int i = 0; i < m_lightFieldBlockCount; ++i) {
+			block->clear();
+			for (int x = 0; x < size.x; ++x)
+				for (int y = 0; y < size.y; ++y) {
+					Vector v = m_lightFieldBlocks[i]->get(x, y);
+					float temp[3 + 2] = {
+						v.x, v.y, v.z,
+						1.f, // alpha
+						1.f, // reconstruction filter weight
+					};
+					Point2 pos = Point2(x + 0.5f, y + 0.5f);
+					block->put(pos, temp);
+				}
+			std::ostringstream oss;
+			oss << "_light-field-" << std::setw(numberWidth) << std::setfill('0') << i << ".exr";
+			lightFieldFilm->clear();
+			lightFieldFilm->put(block);
+			auto file_name = scene->getDestinationFile().stem().string() + oss.str();
+			lightFieldFilm->setDestinationFile(file_dir / file_name, 0);
+			lightFieldFilm->develop(scene, queue->getRenderTime(job));
+		}
+#else // single EXR with multiple channels
+		ref<ImageBlock> block = new ImageBlock(Bitmap::EMultiSpectrumAlphaWeight, size, film->getReconstructionFilter(), (int) (SPECTRUM_SAMPLES * m_lightFieldBlockCount + 2), false);
+		block->clear();
 		for (int x = 0; x < size.x; ++x)
 			for (int y = 0; y < size.y; ++y) {
-				float temp[3 * 10 + 2];
-				{
-					Vector v = m_albedo->get(x, y);
-					temp[0] = v.x; temp[1] = v.y; temp[2] = v.z;
-					float f = m_albedo->variance(x, y) / m_albedo->sampleCount(x, y);
-					temp[3] = temp[4] = temp[5] = f;
+				float temp[3 * m_lightFieldBlockCount + 2];
+				for (int i = 0; i < m_lightFieldBlockCount; ++i) {
+					Vector v = m_lightFieldBlocks[i]->get(x, y);
+					temp[i * 3 + 0] = v.x;
+					temp[i * 3 + 1] = v.y;
+					temp[i * 3 + 2] = v.z;
 				}
-				{
-					Vector v = m_normal->get(x, y);
-					temp[6] = v.x; temp[7] = v.y; temp[8] = v.z;
-					float f = m_normal->variance(x, y) / m_normal->sampleCount(x, y);
-					temp[9] = temp[10] = temp[11] = f;
-				}
-				{
-					Vector v = m_depth->get(x, y);
-					temp[12] = v.x; temp[13] = v.y; temp[14] = v.z;
-					float f = m_depth->variance(x, y) / m_depth->sampleCount(x, y);
-					temp[15] = temp[16] = temp[17] = f;
-				}
-				{
-					Vector v = m_diffuse->get(x, y);
-					temp[18] = v.x; temp[19] = v.y; temp[20] = v.z;
-					float f = m_diffuse->variance(x, y) / m_diffuse->sampleCount(x, y);
-					temp[21] = temp[22] = temp[23] = f;
-				}
-				{
-					Vector v = m_specular->get(x, y);
-					temp[24] = v.x; temp[25] = v.y; temp[26] = v.z;
-					float f = m_specular->variance(x, y) / m_specular->sampleCount(x, y);
-					temp[27] = temp[28] = temp[29] = f;
-				}
-				temp[30] = 1.f; // alpha
-				temp[31] = 1.f; // reconstruction filter weight
+				temp[3 * m_lightFieldBlockCount + 0] = 1.f; // alpha
+				temp[3 * m_lightFieldBlockCount + 1] = 1.f; // reconstruction filter weight
 				Point2 pos = Point2(x + 0.5f, y + 0.5f);
 				block->put(pos, temp);
 			}
@@ -291,23 +383,26 @@ public:
 		props.setInteger("height", size.y);
 		props.setBoolean("banner", false);
 		props.setBoolean("attachLog", false);
-		props.setString("pixelFormat", std::string("rgb,luminance") +
-			",rgb,luminance" +
-			",luminance,luminance" +
-			",rgb,luminance" +
-			",rgb,luminance");
-		props.setString("channelNames", std::string("albedo,albedoVariance") +
-			",normal,normalVariance" +
-			",depth,depthVariance" +
-			",diffuse,diffuseVariance" +
-			",specular,specularVariance");
-		ref<Film> featuresFilm = static_cast<Film*>(PluginManager::getInstance()->createObject(MTS_CLASS(Film), props));
-		featuresFilm->clear();
-		featuresFilm->put(block);
-		auto file_name = scene->getDestinationFile().stem().string() + "_features.exr";
-		featuresFilm->setDestinationFile(file_dir / file_name, 0);
-		featuresFilm->develop(scene, queue->getRenderTime(job));
-
+		std::string pixelFormatStr("rgb");
+		for (int i = 1; i < m_lightFieldBlockCount; ++i)
+			pixelFormatStr += ",rgb";
+		props.setString("pixelFormat", pixelFormatStr);
+		std::string channelNamesStr;
+		{
+			std::ostringstream oss;
+			oss << std::setw(numberWidth) << std::setfill('0') << 0;
+			for (int i = 1; i < m_lightFieldBlockCount; ++i)
+				oss << "," << std::setw(numberWidth) << std::setfill('0') << i;
+			channelNamesStr = oss.str();
+		}
+		props.setString("channelNames", channelNamesStr);
+		ref<Film> lightFieldFilm = static_cast<Film*>(PluginManager::getInstance()->createObject(MTS_CLASS(Film), props));
+		lightFieldFilm->clear();
+		lightFieldFilm->put(block);
+		auto file_name = scene->getDestinationFile().stem().string() + "_light-field.exr";
+		lightFieldFilm->setDestinationFile(file_dir / file_name, 0);
+		lightFieldFilm->develop(scene, queue->getRenderTime(job));
+#endif
 		return proc->getReturnStatus() == ParallelProcess::ESuccess;
 	}
 
@@ -365,6 +460,25 @@ public:
 		return Spectrum();
 	}
 
+	Point2 LocalDir2Coordinate(const Vector &wo) const {
+		Point2 pp;
+		float at = std::atan2(wo.y, wo.x) / (2 * M_PI);
+		// float at = FastArcTan(wo.y / wo.x) / (2 * M_PI);
+		pp.x = at >= 0 ? at : 1.0f + at;
+		pp.y = (1.0f - wo.z * wo.z);
+		pp.x = std::min(std::max(pp.x, 0.0f), 1.0f - 1e-6f);
+		pp.y = std::min(std::max(pp.y, 0.0f), 1.0f - 1e-6f);
+		return pp;
+	};
+
+	int BlockDivide(const Point2 &sample) const{
+		const float stride = 1.0f / m_lightFieldResolution;
+		int idx_x = std::min((int)(sample.x / stride), m_lightFieldResolution - 1);
+		int idx_y = std::min((int)(sample.y / stride), m_lightFieldResolution - 1);
+		int idx = idx_y * m_lightFieldResolution + idx_x;
+		return idx;
+	}
+
 	Spectrum Li(const RayDifferential &r, RadianceQueryRecord &rRec, const Point2i &offset) const {
 		/* Some aliases and local variables */
 		const Scene *scene = rRec.scene;
@@ -387,6 +501,10 @@ public:
 		Spectrum LiDiffuse(0.f);
 		Spectrum throughputDiffuse(1.f);
 		Spectrum LiTemp;
+
+		Vector firstHitDir;
+		Vector firstHitNormal;
+		Spectrum firstHitLiDelta(0.f);
 
 		while (rRec.depth <= m_maxDepth || m_maxDepth < 0) {
 			if (!its.isValid()) {
@@ -463,6 +581,8 @@ public:
 						/* Weight using the power heuristic */
 						Float weight = miWeight(dRec.pdf, bsdfPdf);
 						LiTemp = value * weight;
+						if (rRec.depth == 1)
+							firstHitLiDelta += LiTemp * throughput * bsdfVal;
 						Li += LiTemp * throughput * bsdfVal;
 						if(!foundRough) {
 							bRec.typeMask = BSDF::EDiffuse;
@@ -494,12 +614,15 @@ public:
 				Vector n = its.shFrame.n;
 				if(Frame::cosTheta(its.wi) < 0) n = -n;
 				m_normal->addSample(offset, n);
+				firstHitNormal = n;
 				m_depth->addSample(offset, Vector(roughDepth + its.t));
 
 				BSDFSamplingRecord b(bRec);
 				b.typeMask = BSDF::EDiffuse;
 				Spectrum d = bsdf->eval(b, b.sampledType & BSDF::EDelta ? EDiscrete : ESolidAngle);
 				throughputDiffuse *= d / bsdfPdf;
+
+				firstHitDir = its.toWorld(bRec.wo);
 
 				foundRough = true;
 			} else {
@@ -566,6 +689,8 @@ public:
 				Li += LiTemp * throughput;
 				if(foundRough)
 					LiDiffuse += LiTemp * throughputDiffuse;
+				if (rRec.depth == 1)
+					firstHitLiDelta -= value * throughput * (1 - miWeight(bsdfPdf, lumPdf));
 			}
 
 			/* ==================================================================== */
@@ -608,6 +733,14 @@ public:
 		LiSpecular.toLinearRGB(v.x, v.y, v.z);
 		m_specular->addSample(offset, v);
 
+		int lightFieldBlockIdx = BlockDivide(LocalDir2Coordinate(Frame(firstHitNormal).toLocal(firstHitDir)));
+		Spectrum firstHitLi = (Li - firstHitLiDelta) / roughAlbedo;
+		if(firstHitLi.isValid()) {
+			Vector rgb;
+			firstHitLi.toLinearRGB(rgb.x, rgb.y, rgb.z);
+			m_lightFieldBlocks[lightFieldBlockIdx]->addSample(offset, rgb);
+		}
+
 		return Li;
 	}
 
@@ -639,6 +772,10 @@ private:
 	mutable std::unique_ptr<OutputBuffer> m_depth;
 	mutable std::unique_ptr<OutputBuffer> m_diffuse;
 	mutable std::unique_ptr<OutputBuffer> m_specular;
+
+	int m_lightFieldResolution;
+	int m_lightFieldBlockCount;
+	mutable std::vector<std::unique_ptr<OutputBuffer>> m_lightFieldBlocks;
 };
 
 MTS_IMPLEMENT_CLASS_S(MIPathTracer, false, MonteCarloIntegrator)
