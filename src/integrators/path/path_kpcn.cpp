@@ -211,29 +211,9 @@ public:
 		ref<Film> film = sensor->getFilm();
 
 		auto size = film->getSize();
+		auto file_dir = scene->getDestinationFile().parent_path();
 
-		auto props = Properties("hdrfilm");
-		props.setInteger("width", size.x);
-		props.setInteger("height", size.y);
-		props.setBoolean("banner", false);
-		props.setBoolean("attachLog", false);
-		props.setString("pixelFormat", std::string(
-			"rgb,luminance,") +
-			"rgb,luminance," +
-			"luminance,luminance," +
-			"rgb,luminance," +
-			"rgb,luminance");
-		props.setString("channelNames", std::string(
-			"albedo,albedoVariance,") +
-			"normal,normalVariance," +
-			"depth,depthVariance," +
-			"diffuse,diffuseVariance," +
-			"specular,specularVariance");
-		m_features = static_cast<Film*>(PluginManager::getInstance()->createObject(MTS_CLASS(Film), props));
-		m_features->clear();
-		auto dir = scene->getDestinationFile().parent_path();
-		m_features->setDestinationFile(dir / (scene->getDestinationFile().stem().string() + "_features.exr"), 0);
-
+		// features buffer
 		m_albedo = std::make_unique<OutputBuffer>(size);
 		m_normal = std::make_unique<OutputBuffer>(size);
 		m_depth = std::make_unique<OutputBuffer>(size);
@@ -305,8 +285,28 @@ public:
 				Point2 pos = Point2(x + 0.5f, y + 0.5f);
 				block->put(pos, temp);
 			}
-		m_features->put(block);
-		m_features->develop(scene, queue->getRenderTime(job));
+
+		auto props = Properties("hdrfilm");
+		props.setInteger("width", size.x);
+		props.setInteger("height", size.y);
+		props.setBoolean("banner", false);
+		props.setBoolean("attachLog", false);
+		props.setString("pixelFormat", std::string("rgb,luminance") +
+			",rgb,luminance" +
+			",luminance,luminance" +
+			",rgb,luminance" +
+			",rgb,luminance");
+		props.setString("channelNames", std::string("albedo,albedoVariance") +
+			",normal,normalVariance" +
+			",depth,depthVariance" +
+			",diffuse,diffuseVariance" +
+			",specular,specularVariance");
+		ref<Film> featuresFilm = static_cast<Film*>(PluginManager::getInstance()->createObject(MTS_CLASS(Film), props));
+		featuresFilm->clear();
+		featuresFilm->put(block);
+		auto file_name = scene->getDestinationFile().stem().string() + "_features.exr";
+		featuresFilm->setDestinationFile(file_dir / file_name, 0);
+		featuresFilm->develop(scene, queue->getRenderTime(job));
 
 		return proc->getReturnStatus() == ParallelProcess::ESuccess;
 	}
@@ -462,7 +462,7 @@ public:
 
 						/* Weight using the power heuristic */
 						Float weight = miWeight(dRec.pdf, bsdfPdf);
-						LiTemp =  value * weight;
+						LiTemp = value * weight;
 						Li += LiTemp * throughput * bsdfVal;
 						if(!foundRough) {
 							bRec.typeMask = BSDF::EDiffuse;
@@ -562,7 +562,7 @@ public:
 				   implemented direct illumination sampling technique */
 				const Float lumPdf = (!(bRec.sampledType & BSDF::EDelta)) ?
 					scene->pdfEmitterDirect(dRec) : 0;
-				Spectrum LiTemp =  value * miWeight(bsdfPdf, lumPdf);
+				Spectrum LiTemp = value * miWeight(bsdfPdf, lumPdf);
 				Li += LiTemp * throughput;
 				if(foundRough)
 					LiDiffuse += LiTemp * throughputDiffuse;
@@ -639,8 +639,6 @@ private:
 	mutable std::unique_ptr<OutputBuffer> m_depth;
 	mutable std::unique_ptr<OutputBuffer> m_diffuse;
 	mutable std::unique_ptr<OutputBuffer> m_specular;
-
-	mutable ref<Film> m_features;
 };
 
 MTS_IMPLEMENT_CLASS_S(MIPathTracer, false, MonteCarloIntegrator)
