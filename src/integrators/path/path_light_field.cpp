@@ -504,7 +504,8 @@ public:
 
 		Vector firstHitDir;
 		Vector firstHitNormal;
-		Spectrum firstHitLiDelta(0.f);
+		Spectrum firstHitLi(0.f);
+		Spectrum firstHitThroughput(1.f);
 
 		while (rRec.depth <= m_maxDepth || m_maxDepth < 0) {
 			if (!its.isValid()) {
@@ -581,8 +582,8 @@ public:
 						/* Weight using the power heuristic */
 						Float weight = miWeight(dRec.pdf, bsdfPdf);
 						LiTemp = value * weight;
-						if (rRec.depth == 1)
-							firstHitLiDelta += LiTemp * throughput * bsdfVal;
+						if (rRec.depth != 1)
+							firstHitLi += LiTemp * firstHitThroughput * bsdfVal;
 						Li += LiTemp * throughput * bsdfVal;
 						if(!foundRough) {
 							bRec.typeMask = BSDF::EDiffuse;
@@ -675,6 +676,8 @@ public:
 			/* Keep track of the throughput and relative
 			   refractive index along the path */
 			throughput *= bsdfWeight;
+			if (rRec.depth != 1)
+				firstHitThroughput *= bsdfWeight;
 			eta *= bRec.eta;
 
 			/* If a luminaire was hit, estimate the local illumination and
@@ -690,7 +693,10 @@ public:
 				if(foundRough)
 					LiDiffuse += LiTemp * throughputDiffuse;
 				if (rRec.depth == 1)
-					firstHitLiDelta -= value * throughput * (1 - miWeight(bsdfPdf, lumPdf));
+					firstHitLi += value * firstHitThroughput;
+				else
+					firstHitLi += LiTemp * firstHitThroughput;
+
 			}
 
 			/* ==================================================================== */
@@ -714,6 +720,9 @@ public:
 					break;
 				throughput /= q;
 				throughputDiffuse /= q;
+				// `rRec.depth` has already increased by 1, hence compared with 2.
+				if (rRec.depth > 2)
+					firstHitThroughput /= q;
 			}
 		}
 
@@ -734,7 +743,6 @@ public:
 		m_specular->addSample(offset, v);
 
 		int lightFieldBlockIdx = BlockDivide(LocalDir2Coordinate(Frame(firstHitNormal).toLocal(firstHitDir)));
-		Spectrum firstHitLi = (Li - firstHitLiDelta) / roughAlbedo;
 		if(firstHitLi.isValid()) {
 			Vector rgb;
 			firstHitLi.toLinearRGB(rgb.x, rgb.y, rgb.z);
