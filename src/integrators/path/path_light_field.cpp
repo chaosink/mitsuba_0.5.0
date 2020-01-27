@@ -22,6 +22,7 @@
 #include <mitsuba/core/plugin.h>
 
 #include <iomanip>
+#include <fstream>
 
 MTS_NAMESPACE_BEGIN
 
@@ -403,6 +404,11 @@ public:
 		lightFieldFilm->setDestinationFile(file_dir / file_name, 0);
 		lightFieldFilm->develop(scene, queue->getRenderTime(job));
 #endif
+		std::ofstream ofs((file_dir / std::string("transform.txt")).string());
+		for (int r = 0; r < 3; ++r)
+			for(int c = 0; c < 3; ++c)
+				ofs << sensor->getWorldTransform()->eval(0).getMatrix()(r, c) << " ";
+
 		return proc->getReturnStatus() == ParallelProcess::ESuccess;
 	}
 
