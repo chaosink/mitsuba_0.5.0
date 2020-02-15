@@ -257,8 +257,11 @@ public:
 		m_process = NULL;
 		sched->unregisterResource(integratorResID);
 
+		ref<ReconstructionFilter> boxFilter = static_cast<ReconstructionFilter*>(PluginManager::getInstance()->createObject(MTS_CLASS(ReconstructionFilter), Properties("box")));
+		boxFilter->configure();
+
 		{
-			ref<ImageBlock> block = new ImageBlock(Bitmap::EMultiSpectrumAlphaWeight, size, film->getReconstructionFilter(), (int) (SPECTRUM_SAMPLES * 10 + 2), false);
+			ref<ImageBlock> block = new ImageBlock(Bitmap::EMultiSpectrumAlphaWeight, size, boxFilter, (int) (SPECTRUM_SAMPLES * 10 + 2), false);
 			block->clear();
 			for (int x = 0; x < size.x; ++x)
 				for (int y = 0; y < size.y; ++y) {
@@ -315,6 +318,8 @@ public:
 				",diffuse,diffuseVariance" +
 				",specular,specularVariance");
 			ref<Film> featuresFilm = static_cast<Film*>(PluginManager::getInstance()->createObject(MTS_CLASS(Film), props));
+			featuresFilm->addChild(boxFilter);
+			featuresFilm->configure();
 			featuresFilm->clear();
 			featuresFilm->put(block);
 			auto file_name = scene->getDestinationFile().stem().string() + "_features.exr";
@@ -331,15 +336,20 @@ public:
 
 #define MULTIPLE_EXRS_WITH_SINGLE_CHANNEL
 #ifdef MULTIPLE_EXRS_WITH_SINGLE_CHANNEL // multiple EXRs with single channel
-		ref<ImageBlock> block = new ImageBlock(Bitmap::ESpectrumAlphaWeight, size, film->getReconstructionFilter(), (int) (SPECTRUM_SAMPLES + 2), false);
+		ref<ImageBlock> block = new ImageBlock(Bitmap::ESpectrumAlphaWeight, size, boxFilter, (int) (SPECTRUM_SAMPLES + 2), false);
 
-		auto props = Properties("hdrfilm");
-		props.setInteger("width", size.x);
-		props.setInteger("height", size.y);
-		props.setBoolean("banner", false);
-		props.setBoolean("attachLog", false);
-		props.setString("pixelFormat", "rgb");
-		ref<Film> lightFieldFilm = static_cast<Film*>(PluginManager::getInstance()->createObject(MTS_CLASS(Film), props));
+		ref<Film> lightFieldFilm;
+		{
+			auto props = Properties("hdrfilm");
+			props.setInteger("width", size.x);
+			props.setInteger("height", size.y);
+			props.setBoolean("banner", false);
+			props.setBoolean("attachLog", false);
+			props.setString("pixelFormat", "rgb");
+			lightFieldFilm = static_cast<Film*>(PluginManager::getInstance()->createObject(MTS_CLASS(Film), props));
+		}
+		lightFieldFilm->addChild(boxFilter);
+		lightFieldFilm->configure();
 
 		for (int i = 0; i < m_lightFieldBlockCount; ++i) {
 			block->clear();
@@ -363,7 +373,7 @@ public:
 			lightFieldFilm->develop(scene, queue->getRenderTime(job));
 		}
 #else // single EXR with multiple channels
-		ref<ImageBlock> block = new ImageBlock(Bitmap::EMultiSpectrumAlphaWeight, size, film->getReconstructionFilter(), (int) (SPECTRUM_SAMPLES * m_lightFieldBlockCount + 2), false);
+		ref<ImageBlock> block = new ImageBlock(Bitmap::EMultiSpectrumAlphaWeight, size, boxFilter, (int) (SPECTRUM_SAMPLES * m_lightFieldBlockCount + 2), false);
 		block->clear();
 		for (int x = 0; x < size.x; ++x)
 			for (int y = 0; y < size.y; ++y) {
@@ -399,6 +409,8 @@ public:
 		}
 		props.setString("channelNames", channelNamesStr);
 		ref<Film> lightFieldFilm = static_cast<Film*>(PluginManager::getInstance()->createObject(MTS_CLASS(Film), props));
+		lightFieldFilm->addChild(boxFilter);
+		lightFieldFilm->configure();
 		lightFieldFilm->clear();
 		lightFieldFilm->put(block);
 		auto file_name = scene->getDestinationFile().stem().string() + "_light-field.exr";
