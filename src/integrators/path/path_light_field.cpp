@@ -259,6 +259,7 @@ public:
 
 		{
 			ref<ImageBlock> block = new ImageBlock(Bitmap::EMultiSpectrumAlphaWeight, size, film->getReconstructionFilter(), (int) (SPECTRUM_SAMPLES * 10 + 2), false);
+			block->clear();
 			for (int x = 0; x < size.x; ++x)
 				for (int y = 0; y < size.y; ++y) {
 					float temp[3 * 10 + 2];
