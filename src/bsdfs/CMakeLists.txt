@@ -34,6 +34,7 @@ add_bsdf(difftrans  difftrans.cpp)
 add_bsdf(hk         hk.cpp)
 add_bsdf(null       null.cpp)
 add_bsdf(thindielectric thindielectric.cpp)
+add_bsdf(measured   measured.cpp)
 
 
 # if (BOOST_SPIRIT_WORKS)

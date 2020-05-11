@@ -27,6 +27,7 @@ plugins += env.SharedLibrary('difftrans', ['difftrans.cpp'])
 plugins += env.SharedLibrary('hk', ['hk.cpp'])
 plugins += env.SharedLibrary('null', ['null.cpp'])
 plugins += env.SharedLibrary('thindielectric', ['thindielectric.cpp'])
+plugins += env.SharedLibrary('measured', ['measured.cpp'])
 
 # The Irawan-Marschner plugin uses a Boost::Spirit parser, which makes it
 # pretty heavy stuff to compile. Go easy on the compiler flags:
